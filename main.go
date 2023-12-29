@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-func download(ctx context.Context, record *events.S3EventRecord) (*s3.GetObjectOutput, error) {
+func download(ctx context.Context, record *events.S3EventRecord, key string) (*s3.GetObjectOutput, error) {
 	sess, err := session.NewSession()
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func download(ctx context.Context, record *events.S3EventRecord) (*s3.GetObjectO
 
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(record.S3.Bucket.Name),
-		Key:    aws.String(record.S3.Object.Key),
+		Key:    aws.String(key),
 	}
 
 	return s3Client.GetObjectWithContext(ctx, input)
@@ -85,7 +85,10 @@ func handler(ctx context.Context, event events.S3Event) error {
 		}
 
 		log.Printf("downloading file %s", key)
-		file, err := download(ctx, &record)
+		file, err := download(ctx, &record, key)
+		if err != nil {
+			return fmt.Errorf("error downloading file: %v", err)
+		}
 		defer file.Body.Close()
 
 		log.Printf("reading auctions from file..")
