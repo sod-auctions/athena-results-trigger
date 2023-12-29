@@ -9,15 +9,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	_ "github.com/lib/pq"
 	"github.com/sod-auctions/auctions-db"
+	"io"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-
-	"io"
-	"net/url"
 )
 
 func download(ctx context.Context, record *events.S3EventRecord) (*s3.GetObjectOutput, error) {
