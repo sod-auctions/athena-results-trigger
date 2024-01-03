@@ -56,23 +56,28 @@ func parseIntOrCrash(s string, base int, bitSize int) int64 {
 	return result
 }
 
-func mapRowToAuction(row []string, t *time.Time, interval int16) *auctions_db.Auction {
-	return &auctions_db.Auction{
-		RealmID:        int16(parseIntOrCrash(row[6], 10, 16)),
-		AuctionHouseID: int16(parseIntOrCrash(row[7], 10, 16)),
-		ItemID:         int(parseIntOrCrash(row[8], 10, 64)),
-		Interval:       interval,
-		Timestamp:      int32(t.Unix()),
-		Quantity:       int32(parseIntOrCrash(row[9], 10, 32)),
-		Min:            int32(parseIntOrCrash(row[10], 10, 32)),
-		Max:            int32(parseIntOrCrash(row[11], 10, 32)),
-		P05:            int32(parseIntOrCrash(row[12], 10, 32)),
-		P10:            int32(parseIntOrCrash(row[13], 10, 32)),
-		P25:            int32(parseIntOrCrash(row[14], 10, 32)),
-		P50:            int32(parseIntOrCrash(row[15], 10, 32)),
-		P75:            int32(parseIntOrCrash(row[16], 10, 32)),
-		P90:            int32(parseIntOrCrash(row[17], 10, 32)),
+func mapRowToAuction(row []string) (*auctions_db.Auction, error) {
+	t, err := time.Parse(time.RFC3339, row[0])
+	if err != nil {
+		return nil, err
 	}
+
+	return &auctions_db.Auction{
+		RealmID:        int16(parseIntOrCrash(row[1], 10, 16)),
+		AuctionHouseID: int16(parseIntOrCrash(row[2], 10, 16)),
+		ItemID:         int(parseIntOrCrash(row[3], 10, 64)),
+		Interval:       1,
+		Timestamp:      int32(t.Unix()),
+		Quantity:       int32(parseIntOrCrash(row[4], 10, 32)),
+		Min:            int32(parseIntOrCrash(row[5], 10, 32)),
+		Max:            int32(parseIntOrCrash(row[6], 10, 32)),
+		P05:            int32(parseIntOrCrash(row[7], 10, 32)),
+		P10:            int32(parseIntOrCrash(row[8], 10, 32)),
+		P25:            int32(parseIntOrCrash(row[9], 10, 32)),
+		P50:            int32(parseIntOrCrash(row[10], 10, 32)),
+		P75:            int32(parseIntOrCrash(row[11], 10, 32)),
+		P90:            int32(parseIntOrCrash(row[12], 10, 32)),
+	}, nil
 }
 
 func sendIdsToSqs(ids []int32) error {
@@ -154,13 +159,6 @@ func handler(ctx context.Context, event events.S3Event) error {
 			return fmt.Errorf("failed to read CSV header: %v", err)
 		}
 
-		interval := int16(parseIntOrCrash(dateInfo["interval"], 10, 16))
-		year := parseIntOrCrash(dateInfo["year"], 10, 64)
-		month := parseIntOrCrash(dateInfo["month"], 10, 64)
-		day := parseIntOrCrash(dateInfo["day"], 10, 64)
-		hour := parseIntOrCrash(dateInfo["hour"], 10, 64)
-		t := time.Date(int(year), time.Month(month), int(day), int(hour), 0, 0, 0, time.UTC)
-
 		log.Printf("comparing item ids in file against %d ids in database\n", len(itemIds))
 		var nonExistentItemIds = make(map[int32]struct{})
 		for {
@@ -171,9 +169,14 @@ func handler(ctx context.Context, event events.S3Event) error {
 			if err != nil {
 				return fmt.Errorf("error reading CSV file: %v", err)
 			}
-			auctions = append(auctions, mapRowToAuction(row, &t, interval))
 
-			itemId := int32(parseIntOrCrash(row[8], 10, 32))
+			auction, err := mapRowToAuction(row)
+			if err != nil {
+				return fmt.Errorf("error mapping row to auction: %v", err)
+			}
+			auctions = append(auctions, auction)
+
+			itemId := int32(parseIntOrCrash(row[3], 10, 32))
 			_, exists := itemIds[itemId]
 			if exists == false {
 				nonExistentItemIds[itemId] = struct{}{}
@@ -191,12 +194,10 @@ func handler(ctx context.Context, event events.S3Event) error {
 			return fmt.Errorf("error writing auction history: %v", err)
 		}
 
-		if interval == 1 {
-			log.Printf("writing %d auctions to current auctions\n", len(auctions))
-			err = database.ReplaceCurrentAuctions(auctions)
-			if err != nil {
-				return fmt.Errorf("error writing current auctions: %v", err)
-			}
+		log.Printf("writing %d auctions to current auctions\n", len(auctions))
+		err = database.ReplaceCurrentAuctions(auctions)
+		if err != nil {
+			return fmt.Errorf("error writing current auctions: %v", err)
 		}
 
 		log.Printf("found %d item ids to update, writing to queue..\n", len(idSlice))
