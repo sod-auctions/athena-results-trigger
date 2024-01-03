@@ -29,8 +29,8 @@ data "aws_ssm_parameter" "db_connection_string" {
   name = "/db-connection-string"
 }
 
-data "aws_lambda_function" "athena_aggregation_trigger" {
-  function_name = "athena_aggregation_trigger"
+data "aws_sqs_queue" "item_ids_queue" {
+  name = "item-ids"
 }
 
 resource "aws_iam_role" "lambda_exec" {
@@ -44,7 +44,7 @@ resource "aws_iam_role" "lambda_exec" {
           "Service" : "lambda.amazonaws.com"
         },
         "Effect" : "Allow"
-      }
+      },
     ]
   })
 }
@@ -63,6 +63,16 @@ resource "aws_iam_role_policy" "lambda_exec_policy" {
           "arn:aws:s3:::sod-auctions/*"
         ]
       },
+      {
+        "Effect" : "Allow",
+        "Action" : [
+          "sqs:SendMessage",
+          "sqs:SendMessageBatch"
+        ],
+        "Resource": [
+          data.aws_sqs_queue.item_ids_queue.arn
+        ]
+      }
     ]
   })
 }
@@ -87,31 +97,5 @@ resource "aws_lambda_function" "athena_results_trigger" {
     variables = {
       DB_CONNECTION_STRING = data.aws_ssm_parameter.db_connection_string.value
     }
-  }
-}
-
-resource "aws_lambda_permission" "allow_s3" {
-  statement_id  = "AllowExecutionFromS3Bucket"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.athena_results_trigger.function_name
-  principal     = "s3.amazonaws.com"
-  source_arn    = "arn:aws:s3:::sod-auctions"
-}
-
-resource "aws_s3_bucket_notification" "bucket_notification" {
-  bucket = "sod-auctions"
-
-  lambda_function {
-    lambda_function_arn = data.aws_lambda_function.athena_aggregation_trigger.arn
-    events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "data/"
-    filter_suffix       = ".parquet"
-  }
-
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.athena_results_trigger.arn
-    events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "results/aggregates"
-    filter_suffix       = ".csv"
   }
 }
