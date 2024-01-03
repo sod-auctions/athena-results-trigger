@@ -99,3 +99,8 @@ resource "aws_lambda_function" "athena_results_trigger" {
     }
   }
 }
+
+resource "aws_lambda_function_event_invoke_config" "example" {
+  function_name                = aws_lambda_function.athena_results_trigger.function_name
+  maximum_retry_attempts       = 0
+}

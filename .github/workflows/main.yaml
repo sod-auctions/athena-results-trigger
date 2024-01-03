@@ -1,5 +1,9 @@
 name: CICD
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - master
+
 jobs:
   package-and-deploy:
     runs-on: ubuntu-latest
