@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -121,8 +122,18 @@ func sendBatchToSQS(client *sqs.SQS, batch []int32) error {
 	return err
 }
 
-func handler(ctx context.Context, event events.S3Event) error {
-	for _, record := range event.Records {
+func handler(ctx context.Context, snsEvent events.SNSEvent) error {
+	for _, snsRecord := range snsEvent.Records {
+
+		var event *events.S3Event
+		// Unmarshal record.sns.message json into event
+		err := json.Unmarshal([]byte(snsRecord.SNS.Message), &event)
+		if err != nil {
+			return fmt.Errorf("error unmarshalling SNS message: %v", err)
+		}
+
+		record := event.Records[0]
+
 		key, err := url.QueryUnescape(record.S3.Object.Key)
 		if err != nil {
 			return fmt.Errorf("error decoding S3 object key: %v", err)
